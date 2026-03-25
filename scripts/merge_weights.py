@@ -293,7 +293,11 @@ def _load_finetuned_vlm(checkpoint_path: str, device: str) -> Dict[str, torch.Te
         except (ValueError, OSError) as exc:
             # Custom architecture not registered in transformers — download raw
             # weight files and load them directly (bypasses model class lookup).
-            if "model_type" not in str(exc) and "Unrecognized" not in str(exc):
+            if (
+                "model_type" not in str(exc)
+                and "Unrecognized" not in str(exc)
+                and "does not recognize this architecture" not in str(exc)
+            ):
                 raise
             log.warning(
                 "AutoModel could not instantiate '%s' (%s). "
