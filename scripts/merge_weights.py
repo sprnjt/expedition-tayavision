@@ -230,14 +230,19 @@ def _print_merge_summary(
 def _load_original_llm(model_name: str, device: str, dtype: torch.dtype) -> Dict[str, torch.Tensor]:
     """Load the original text-only LLM state dict."""
     log.info("Loading original LLM from '%s' …", model_name)
+    kwargs = {"torch_dtype": dtype}
+    if device != "cpu":
+        kwargs["device_map"] = device
+        kwargs["low_cpu_mem_usage"] = True
+        
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        dtype=dtype,
-        device_map=device,
-        low_cpu_mem_usage=True,
+        **kwargs
     )
     state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
     del model
+    import gc
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return state
@@ -278,15 +283,19 @@ def _load_finetuned_vlm(checkpoint_path: str, device: str) -> Dict[str, torch.Te
             checkpoint_path,
         )
         try:
+            kwargs = {"torch_dtype": torch.float32, "trust_remote_code": True}
+            if device != "cpu":
+                kwargs["device_map"] = device
+                kwargs["low_cpu_mem_usage"] = True
+                
             model = AutoModel.from_pretrained(
                 checkpoint_path,
-                dtype=torch.float32,
-                device_map=device,
-                trust_remote_code=True,  # needed for custom architectures
-                low_cpu_mem_usage=True,
+                **kwargs
             )
             state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
             del model
+            import gc
+            gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             return state
@@ -417,8 +426,7 @@ def _save_outputs(
         log.info("Building HF LLM model at '%s' …", hf_dir)
         model = AutoModelForCausalLM.from_pretrained(
             original_llm_name,
-            dtype=dtype,
-            low_cpu_mem_usage=True,
+            torch_dtype=dtype,
         )
         missing, unexpected = model.load_state_dict(llm_state, strict=False)
         if missing:
@@ -433,6 +441,8 @@ def _save_outputs(
         model.save_pretrained(str(hf_dir))
         log.info("Saved HF LLM backbone → %s", hf_dir)
         del model
+        import gc
+        gc.collect()
 
         # ---- 2. Connector (multi-modal projector) ----------------------------
         # The connector is trained during IFT so we must persist it alongside
